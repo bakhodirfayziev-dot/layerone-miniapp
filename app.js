@@ -20,7 +20,48 @@ function openProduct(id){currentProduct=PRODUCTS.find(p=>p.id===id);const p=curr
 function add(id){let x=cart.find(x=>x.id===id);x?x.qty++:cart.push({id,qty:1});save();tg?.HapticFeedback?.impactOccurred('light')}function dec(id){let x=cart.find(x=>x.id===id);if(!x)return;x.qty--;if(x.qty<=0)cart=cart.filter(y=>y.id!==id);save();renderCart()}function clearCart(){cart=[];save();renderCart()}
 function renderCart(){const el=document.getElementById('cartItems');if(!cart.length){el.innerHTML='<div class="total-box">Корзина пока пуста.</div>';document.getElementById('cartTotal').innerHTML='';return}el.innerHTML=cart.map(x=>{const p=PRODUCTS.find(p=>p.id===x.id);return`<div class="cart-item"><div class="product-img">${spoolHTML(p)}</div><div style="flex:1"><b>${p.name}</b><div class="meta">${p.weight} · ${money(p.price)}</div><div class="qty"><button onclick="dec(${p.id})">−</button><b>${x.qty}</b><button onclick="add(${p.id});renderCart()">+</button></div></div><b>${money(p.price*x.qty)}</b></div>`}).join('');const sum=cart.reduce((s,x)=>s+PRODUCTS.find(p=>p.id===x.id).price*x.qty,0);document.getElementById('cartTotal').innerHTML=`<div class="total-row"><span>Товары</span><b>${money(sum)}</b></div><div class="total-row"><span>Доставка</span><span>При получении</span></div><div class="total-row big"><span>Итого</span><span>${money(sum)}</span></div>`}
 function showCheckout(){if(!cart.length)return;const sum=cart.reduce((s,x)=>s+PRODUCTS.find(p=>p.id===x.id).price*x.qty,0);document.getElementById('checkoutTotal').innerHTML=`<div class="total-row big"><span>К оплате за товары</span><span>${money(sum)}</span></div><div class="meta">Доставка оплачивается отдельно при получении.</div>`;showScreen('checkout')}
-function requestLocation(){if(!tg?.requestLocation){alert('Откройте магазин внутри Telegram, чтобы использовать геолокацию.');return}tg.requestLocation(ok=>{if(ok&&tg.initDataUnsafe?.location){geo=tg.initDataUnsafe.location;document.getElementById('address').value=`Геолокация: ${geo.latitude}, ${geo.longitude}`}})}
+function requestLocation(){
+  if(!tg){
+    alert('Откройте магазин внутри Telegram, чтобы использовать геолокацию.');
+    return;
+  }
+
+  const lm = tg.LocationManager;
+
+  if(!lm){
+    alert('Ваша версия Telegram не поддерживает геолокацию Mini App. Обновите Telegram.');
+    return;
+  }
+
+  lm.init(()=>{
+    if(!lm.isLocationAvailable){
+      alert('Геолокация недоступна. Проверьте настройки геолокации.');
+      return;
+    }
+
+    if(lm.isAccessRequested && !lm.isAccessGranted){
+      if(lm.openSettings){
+        lm.openSettings();
+      }else{
+        alert('Разрешите Telegram доступ к геолокации в настройках телефона.');
+      }
+      return;
+    }
+
+    lm.getLocation(location=>{
+      if(!location){
+        alert('Не удалось получить геолокацию. Разрешите доступ к местоположению и попробуйте ещё раз.');
+        return;
+      }
+
+      geo = location;
+      document.getElementById('address').value =
+        `Геолокация: ${location.latitude}, ${location.longitude}`;
+
+      tg.HapticFeedback?.notificationOccurred('success');
+    });
+  });
+}
 async function submitOrder(){const name=document.getElementById('name').value.trim(),phone=document.getElementById('phone').value.trim(),address=document.getElementById('address').value.trim(),comment=document.getElementById('comment').value.trim();if(!name||!phone||!address){alert('Заполните имя, телефон и адрес доставки.');return}const items=cart.map(x=>{const p=PRODUCTS.find(p=>p.id===x.id);return{name:p.name,qty:x.qty,price:p.price}}),sum=items.reduce((s,x)=>s+x.price*x.qty,0);const order={orderId:'L1-'+Date.now().toString().slice(-6),user:tg?.initDataUnsafe?.user||null,name,phone,address,comment,items,total:sum,delivery:'Оплачивается покупателем при получении',createdAt:new Date().toISOString()};const url=localStorage.getItem('layerone_backend_url');if(url){try{await fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(order)})}catch(e){console.log(e)}}else console.log('ORDER',order);cart=[];save();document.getElementById('successText').textContent=`Ваш заказ ${order.orderId} принят. Мы свяжемся с вами для подтверждения.`;showScreen('success');tg?.HapticFeedback?.notificationOccurred('success')}
 document.getElementById('products').addEventListener('click',e=>{const action=e.target.closest('[data-action]')?.dataset.action;const id=Number(e.target.closest('[data-action]')?.dataset.id);if(action&&id){e.stopPropagation();action==='add'?add(id):dec(id);renderProducts();renderCart();return}const card=e.target.closest('[data-product-id]');if(card)openProduct(Number(card.dataset.productId))});
 document.getElementById('search')?.addEventListener('input',renderProducts);document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{currentFilter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderProducts()}));document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>showScreen(b.dataset.screen)));document.getElementById('cartTop').onclick=()=>showScreen('cart');renderCats();renderProducts();updateBadge();
